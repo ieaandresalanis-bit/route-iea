@@ -1,0 +1,1373 @@
+// ──────────────────────────────────────────────────────────────
+// IEA Growth Intelligence - Prisma Schema
+// IEA Growth Intelligence — Commercial Intelligence & Growth System
+// ──────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ──────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPERADMIN
+  OPERATIONS
+  OPERATOR
+}
+
+enum VehicleStatus {
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+  DECOMMISSIONED
+}
+
+enum VehicleType {
+  TRUCK
+  VAN
+  PICKUP
+  CAR
+  MOTORCYCLE
+}
+
+enum TripStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum FuelType {
+  GASOLINE
+  DIESEL
+  ELECTRIC
+  HYBRID
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum FuelSource {
+  MANUAL
+  CAMERA
+  IMPORT
+}
+
+// ── Sales & CRM Enums ─────────────────────────────────────────
+
+enum Zone {
+  BAJIO           // GTO, QRO, AGS, SLP
+  OCCIDENTE       // JAL, MICH, COL, NAY
+  CENTRO          // CDMX, EDOMEX, PUE, MOR
+  NORTE           // MTY, COAH, CHIH
+  OTROS
+}
+
+enum LeadStatus {
+  PENDIENTE_CONTACTAR     // Pendiente de Contactar
+  INTENTANDO_CONTACTAR    // Intentando Contactar
+  EN_PROSPECCION          // En prospección
+  AGENDAR_CITA            // Agendar Cita
+  ESPERANDO_COTIZACION    // Esperando realizar Cotización
+  COTIZACION_ENTREGADA    // Cotización Entregada
+  ESPERANDO_CONTRATO      // Esperando Contrato y Factura
+  PENDIENTE_PAGO          // Pendiente de Pago
+  CERRADO_GANADO          // Cerrado Ganado
+  CERRADO_PERDIDO         // Cerrado Perdido
+  CONTACTAR_FUTURO        // Contactar en el futuro
+  LEAD_BASURA             // Lead Basura
+}
+
+enum FinancingType {
+  CASHBOLT
+  ASPIRIA
+  CONTADO
+  ARRENDAMIENTO
+  OTRO
+}
+
+enum FinancialStage {
+  NA                // Not applicable (not yet at financial stage)
+  DOCUMENTACION     // Documentación reunida
+  INGRESADO         // Ingresado a financiera
+  APROBADO          // Aprobado por financiera
+  INSTALACION       // En instalación
+  COBRO             // Pendiente de cobro
+}
+
+enum LeadSource {
+  MANUAL
+  REFERRAL
+  WEBSITE
+  COLD_CALL
+  TRADE_SHOW
+  ZOHO_CRM
+  META_ADS
+  TIKTOK
+  ORGANIC
+  GOOGLE_ADS
+  OTHER
+}
+
+enum RouteStatus {
+  DRAFT
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum VisitOutcome {
+  SUCCESSFUL
+  NO_SHOW
+  RESCHEDULED
+  NOT_INTERESTED
+  FOLLOW_UP
+}
+
+enum ClientLifecycleStage {
+  NEW_CLIENT
+  ACTIVE_CLIENT
+  INACTIVE_CLIENT
+  REACTIVATED_CLIENT
+  EXPANSION_CLIENT
+}
+
+enum ClientSystemStatus {
+  PENDING
+  INSTALLED
+  ACTIVE
+  MAINTENANCE
+  DECOMMISSIONED
+}
+
+enum ReferralStatus {
+  REQUESTED
+  RECEIVED
+  CONVERTED
+  EXPIRED
+  DECLINED
+}
+
+// ── Users ──────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  firstName String   @map("first_name")
+  lastName  String   @map("last_name")
+  role      UserRole @default(OPERATOR)
+  phone     String?
+  isActive  Boolean  @default(true) @map("is_active")
+
+  // Organization fields
+  department  String? @map("department")
+  jobTitle    String? @map("job_title")
+  isCrewLeader Boolean @default(false) @map("is_crew_leader")
+
+  // Operator license fields
+  licenseNumber     String?   @map("license_number")
+  licenseImageUrl   String?   @map("license_image_url")
+  licenseExpiration DateTime? @map("license_expiration")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  assignedVehicle Vehicle?    @relation("DriverVehicle")
+  trips           Trip[]
+  fuelLogs        FuelLog[]
+  odometerLogs    OdometerLog[]
+  incidents       Incident[]
+  auditLogs       AuditLog[]
+
+  // Sales & CRM relations
+  assignedLeads  Lead[]         @relation("AssignedLeads")
+  assignedRoutes VisitRoute[]   @relation("AssignedRoutes")
+  visits         Visit[]        @relation("UserVisits")
+
+  @@map("users")
+}
+
+// ── Vehicles ───────────────────────────────────────────────────
+
+model Vehicle {
+  id            String        @id @default(uuid())
+  plateNumber   String        @unique @map("plate_number")
+  vin           String?       @unique
+  brand         String
+  model         String
+  year          Int
+  color         String?
+  type          VehicleType   @default(PICKUP)
+  fuelType      FuelType      @default(GASOLINE) @map("fuel_type")
+  status        VehicleStatus @default(ACTIVE)
+  tankCapacity  Float?        @map("tank_capacity")  // liters
+  currentOdometer Float       @default(0) @map("current_odometer") // km
+
+  // Assigned driver
+  driverId String? @unique @map("driver_id")
+  driver   User?   @relation("DriverVehicle", fields: [driverId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  trips        Trip[]
+  gpsLogs      GpsLog[]
+  fuelLogs     FuelLog[]
+  odometerLogs OdometerLog[]
+  incidents    Incident[]
+  routes       VisitRoute[] @relation("RouteVehicle")
+
+  @@index([status])
+  @@index([plateNumber])
+  @@map("vehicles")
+}
+
+// ── Trips ──────────────────────────────────────────────────────
+
+model Trip {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  status      TripStatus @default(PLANNED)
+
+  // Route info
+  originLat      Float  @map("origin_lat")
+  originLng      Float  @map("origin_lng")
+  originAddress  String @map("origin_address")
+  destLat        Float  @map("dest_lat")
+  destLng        Float  @map("dest_lng")
+  destAddress    String @map("dest_address")
+
+  // Distance & time
+  plannedDistanceKm  Float?   @map("planned_distance_km")
+  actualDistanceKm   Float?   @map("actual_distance_km")
+  plannedStartTime   DateTime? @map("planned_start_time")
+  actualStartTime    DateTime? @map("actual_start_time")
+  actualEndTime      DateTime? @map("actual_end_time")
+
+  // Foreign keys
+  vehicleId String  @map("vehicle_id")
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
+  driverId  String  @map("driver_id")
+  driver    User    @relation(fields: [driverId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  waypoints TripWaypoint[]
+
+  @@index([status])
+  @@index([vehicleId])
+  @@index([driverId])
+  @@index([plannedStartTime])
+  @@map("trips")
+}
+
+model TripWaypoint {
+  id        String @id @default(uuid())
+  tripId    String @map("trip_id")
+  trip      Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  latitude  Float
+  longitude Float
+  address   String?
+  order     Int
+  arrivedAt DateTime? @map("arrived_at")
+
+  @@index([tripId])
+  @@map("trip_waypoints")
+}
+
+// ── GPS Logs ───────────────────────────────────────────────────
+
+model GpsLog {
+  id        String @id @default(uuid())
+  vehicleId String @map("vehicle_id")
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
+
+  latitude  Float
+  longitude Float
+  altitude  Float?
+  speed     Float?   // km/h
+  heading   Float?   // degrees 0-360
+  accuracy  Float?   // meters
+
+  // Engine data (if available from OBD)
+  engineOn  Boolean? @map("engine_on")
+
+  recordedAt DateTime @map("recorded_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([vehicleId, recordedAt])
+  @@index([recordedAt])
+  @@map("gps_logs")
+}
+
+// ── Fuel Logs ──────────────────────────────────────────────────
+
+model FuelLog {
+  id        String @id @default(uuid())
+  vehicleId String @map("vehicle_id")
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
+  userId    String  @map("user_id")
+  user      User    @relation(fields: [userId], references: [id])
+
+  liters       Float
+  pricePerLiter Float   @map("price_per_liter")
+  totalCost    Float    @map("total_cost")
+  odometerAt   Float    @map("odometer_at") // km at fill-up
+  fuelType     FuelType @map("fuel_type")
+  station      String?
+  receiptUrl   String?  @map("receipt_url")
+  notes        String?
+
+  // Location of the fill-up
+  latitude  Float?
+  longitude Float?
+
+  // Camera/OCR support
+  imageUrl  String?    @map("image_url")
+  ocrData   Json?      @map("ocr_data")
+  source    FuelSource @default(MANUAL)
+
+  filledAt  DateTime @map("filled_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([vehicleId, filledAt])
+  @@index([userId])
+  @@map("fuel_logs")
+}
+
+// ── Odometer Logs ──────────────────────────────────────────────
+
+model OdometerLog {
+  id        String @id @default(uuid())
+  vehicleId String @map("vehicle_id")
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
+  userId    String  @map("user_id")
+  user      User    @relation(fields: [userId], references: [id])
+
+  reading   Float   // km
+  source    String  @default("manual") // manual | gps | obd
+  notes     String?
+
+  recordedAt DateTime @map("recorded_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([vehicleId, recordedAt])
+  @@map("odometer_logs")
+}
+
+// ── Incidents ──────────────────────────────────────────────────
+
+model Incident {
+  id        String           @id @default(uuid())
+  vehicleId String           @map("vehicle_id")
+  vehicle   Vehicle          @relation(fields: [vehicleId], references: [id])
+  reportedBy String          @map("reported_by")
+  reporter   User            @relation(fields: [reportedBy], references: [id])
+
+  severity    IncidentSeverity @default(LOW)
+  title       String
+  description String
+  latitude    Float?
+  longitude   Float?
+  resolvedAt  DateTime?       @map("resolved_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([vehicleId])
+  @@index([severity])
+  @@map("incidents")
+}
+
+// ── Audit Log ──────────────────────────────────────────────────
+
+model AuditLog {
+  id       String @id @default(uuid())
+  userId   String @map("user_id")
+  user     User   @relation(fields: [userId], references: [id])
+  action   String
+  entity   String
+  entityId String? @map("entity_id")
+  details  Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ── Leads (Sales CRM) ────────────────────────────────────────
+
+model Lead {
+  id          String     @id @default(uuid())
+
+  // Contact info
+  companyName  String    @map("company_name")
+  contactName  String    @map("contact_name")
+  contactEmail String?   @map("contact_email")
+  contactPhone String?   @map("contact_phone")
+  position     String?
+  website      String?
+
+  // Location
+  latitude   Float
+  longitude  Float
+  address    String
+  city       String?
+  state      String?
+  postalCode String?  @map("postal_code")
+  zone       Zone     @default(OCCIDENTE)
+
+  // Business
+  status         LeadStatus @default(PENDIENTE_CONTACTAR)
+  source         LeadSource @default(MANUAL)
+  industry       String?
+  estimatedValue Float?     @map("estimated_value") // MXN
+  billRange      String?    @map("bill_range") // e.g. "0-50K", "50K-200K", "200K-500K", "500K+"
+  notes          String?    @db.Text
+
+  // Financial tracking
+  financingType   FinancingType  @default(OTRO) @map("financing_type")
+  financialStage  FinancialStage @default(NA) @map("financial_stage")
+  financialNotes  String?        @map("financial_notes")
+
+  // Assignment
+  assignedToId         String? @map("assigned_to_id")
+  assignedTo           User?   @relation("AssignedLeads", fields: [assignedToId], references: [id])
+  originalAssignedToId String? @map("original_assigned_to_id") // preserved for historical analysis
+
+  // Data classification
+  isHistorical Boolean @default(false) @map("is_historical") // true = analysis only, false = active pipeline
+
+  // Zoho CRM sync
+  zohoLeadId       String?   @unique @map("zoho_lead_id")
+  zohoContactId    String?   @unique @map("zoho_contact_id")
+  zohoAccountId    String?   @map("zoho_account_id")
+  zohoDealId       String?   @map("zoho_deal_id")
+  zohoSyncStatus   String?   @map("zoho_sync_status") // synced | pending | error
+  zohoLastSyncedAt DateTime? @map("zoho_last_synced_at")
+
+  // Timestamps
+  convertedAt     DateTime? @map("converted_at")
+  lastContactedAt DateTime? @map("last_contacted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  // Relations
+  routeStops RouteStop[]
+  visits     Visit[]
+  timeline   ContactTimeline[]
+  reminders  Reminder[]
+  smsLogs    SmsLog[]
+
+  @@index([zone, status])
+  @@index([assignedToId])
+  @@index([zohoLeadId])
+  @@index([companyName])
+  @@index([isHistorical])
+  @@index([originalAssignedToId])
+  @@index([financingType])
+  @@index([financialStage])
+  @@index([source])
+  @@index([billRange])
+  @@map("leads")
+}
+
+// ── Visit Routes (multi-stop sales routes) ────────────────────
+
+model VisitRoute {
+  id          String      @id @default(uuid())
+  name        String
+  description String?
+  status      RouteStatus @default(DRAFT)
+  zone        Zone?
+
+  // Planning
+  plannedDate DateTime? @map("planned_date")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  // Google Directions result
+  totalDistanceKm    Float?   @map("total_distance_km")
+  totalDurationMins  Float?   @map("total_duration_mins")
+  directionsPolyline String?  @map("directions_polyline") @db.Text
+  optimizedOrder     Int[]    @map("optimized_order")
+
+  // Origin (defaults to IEA HQ)
+  originLat     Float   @default(20.6636914) @map("origin_lat")
+  originLng     Float   @default(-103.2343897) @map("origin_lng")
+  originAddress String  @default("IEA Oficina Central") @map("origin_address")
+
+  // Assignment
+  assignedToId String  @map("assigned_to_id")
+  assignedTo   User    @relation("AssignedRoutes", fields: [assignedToId], references: [id])
+  vehicleId    String? @map("vehicle_id")
+  vehicle      Vehicle? @relation("RouteVehicle", fields: [vehicleId], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  stops  RouteStop[]
+  visits Visit[]
+
+  @@index([status])
+  @@index([assignedToId])
+  @@index([plannedDate])
+  @@index([zone])
+  @@map("visit_routes")
+}
+
+model RouteStop {
+  id      String     @id @default(uuid())
+  routeId String     @map("route_id")
+  route   VisitRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  leadId  String     @map("lead_id")
+  lead    Lead       @relation(fields: [leadId], references: [id])
+
+  order          Int
+  optimizedOrder Int? @map("optimized_order")
+
+  // Estimated (from Google Directions)
+  estimatedArrival     DateTime? @map("estimated_arrival")
+  estimatedDistanceKm  Float?    @map("estimated_distance_km")
+  estimatedDurationMins Float?   @map("estimated_duration_mins")
+
+  // Actual
+  arrivedAt  DateTime? @map("arrived_at")
+  departedAt DateTime? @map("departed_at")
+  notes      String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([routeId, order])
+  @@index([routeId])
+  @@index([leadId])
+  @@map("route_stops")
+}
+
+// ── Visits ────────────────────────────────────────────────────
+
+model Visit {
+  id         String       @id @default(uuid())
+  leadId     String       @map("lead_id")
+  lead       Lead         @relation(fields: [leadId], references: [id])
+  routeId    String?      @map("route_id")
+  route      VisitRoute?  @relation(fields: [routeId], references: [id])
+  visitedById String      @map("visited_by_id")
+  visitedBy   User        @relation("UserVisits", fields: [visitedById], references: [id])
+
+  visitDate DateTime     @map("visit_date")
+  outcome   VisitOutcome
+
+  // GPS check-in/out
+  checkInLat  Float?    @map("check_in_lat")
+  checkInLng  Float?    @map("check_in_lng")
+  checkInAt   DateTime? @map("check_in_at")
+  checkOutLat Float?    @map("check_out_lat")
+  checkOutLng Float?    @map("check_out_lng")
+  checkOutAt  DateTime? @map("check_out_at")
+
+  // Follow-up
+  notes          String? @db.Text
+  followUpDate   DateTime? @map("follow_up_date")
+  followUpNotes  String?   @map("follow_up_notes")
+
+  // Zoho sync
+  zohoActivityId String? @map("zoho_activity_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([leadId])
+  @@index([visitedById])
+  @@index([routeId])
+  @@index([visitDate])
+  @@map("visits")
+}
+
+// ── Sales Alerts & Automation ─────────────────────────────────
+
+model SalesAlert {
+  id       String @id @default(uuid())
+
+  // What triggered it
+  type     String // inactive_48h | inactive_72h | inactive_7d | deal_stuck | reactivation | low_activity | high_value_unattended
+  severity String // critical | high | medium | low
+
+  // Context
+  leadId      String?  @map("lead_id")
+  advisorId   String?  @map("advisor_id")
+  title       String
+  message     String   @db.Text
+  suggestion  String?  @db.Text  // AI-generated message suggestion
+  metadata    Json?               // extra context (score, value, days, etc.)
+
+  // Intelligence fields
+  priorityScore   Int      @default(50)  @map("priority_score")  // 0-100
+  daysSinceActivity Int?   @map("days_since_activity")
+  stageDuration   Int?     @map("stage_duration")  // days in current stage
+  riskOfLoss      Int?     @map("risk_of_loss")    // 0-100
+  recommendedAction String? @map("recommended_action") // call | message | escalate | close | visit | reassign
+  estimatedValue  Float?   @map("estimated_value")
+  zone            String?
+
+  // State
+  status     String   @default("open") // open | acknowledged | resolved | dismissed | escalated
+  assignedToId String?  @map("assigned_to_id")
+  resolvedAt DateTime? @map("resolved_at")
+  resolvedBy String?   @map("resolved_by")
+  actionTaken String?  @map("action_taken") // called | messaged | escalated | reassigned | visited | closed | other
+  resolutionNotes String? @map("resolution_notes") @db.Text
+  escalatedTo     String? @map("escalated_to") // supervisor | director
+  acknowledgedAt  DateTime? @map("acknowledged_at")
+
+  // Trigger tracking
+  triggerAction  String?  @map("trigger_action") // crm_task | whatsapp_reminder | notify_advisor | notify_supervisor | none
+  triggerSentAt  DateTime? @map("trigger_sent_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([type])
+  @@index([status])
+  @@index([leadId])
+  @@index([advisorId])
+  @@index([severity])
+  @@index([createdAt])
+  @@index([priorityScore])
+  @@index([zone])
+  @@index([assignedToId])
+  @@map("sales_alerts")
+}
+
+model SalesTask {
+  id      String @id @default(uuid())
+
+  // Assignment
+  advisorId  String  @map("advisor_id")
+  leadId     String? @map("lead_id")
+
+  // Task definition
+  type       String // call | whatsapp | email | follow_up | reactivation | close_deal | escalation | visit | send_quote
+  title      String
+  description String? @db.Text
+  suggestion  String? @db.Text  // message suggestion / script
+  channel    String?             // whatsapp | sms | email | phone | in_person
+
+  // Scheduling
+  dueDate    DateTime @map("due_date")
+  priority   String   @default("medium") // critical | high | medium | low
+  priorityScore Int   @default(50) @map("priority_score") // 0-100
+
+  // State
+  status     String   @default("pending") // pending | in_progress | completed | skipped | overdue | reassigned
+  completedAt DateTime? @map("completed_at")
+  startedAt   DateTime? @map("started_at")
+
+  // Source & linking
+  source     String   @default("automation") // automation | alert | priority_engine | manual | ai
+  alertId    String?  @map("alert_id")
+
+  // Execution tracking
+  outcome      String?  // success | partial | no_answer | rescheduled | failed
+  outcomeNotes String?  @map("outcome_notes") @db.Text
+  pipelineMoved Boolean @default(false) @map("pipeline_moved") // did it advance the deal?
+  previousStage String? @map("previous_stage")
+  newStage      String? @map("new_stage")
+
+  // CRM sync
+  zohoTaskId    String?  @map("zoho_task_id")
+  crmSynced     Boolean  @default(false) @map("crm_synced")
+  activityLogged Boolean @default(false) @map("activity_logged")
+
+  // Context
+  zone           String?
+  estimatedValue Float?  @map("estimated_value")
+  leadStatus     String? @map("lead_status")
+
+  // Reassignment
+  originalAdvisorId String? @map("original_advisor_id")
+  reassignedBy      String? @map("reassigned_by")
+  reassignReason    String? @map("reassign_reason")
+
+  // Data classification
+  isHistorical Boolean @default(false) @map("is_historical") // true = legacy task, excluded from operational views
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([advisorId])
+  @@index([leadId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([type])
+  @@index([priority])
+  @@index([priorityScore])
+  @@index([zone])
+  @@index([source])
+  @@index([isHistorical])
+  @@map("sales_tasks")
+}
+
+// ── Follow-Up Automation ─────────────────────────────────────
+
+model FollowUpSequence {
+  id          String @id @default(uuid())
+
+  // Lead binding
+  leadId      String  @map("lead_id")
+  advisorId   String  @map("advisor_id")
+
+  // Trigger
+  trigger     String  // new_lead | no_response | stalled_deal | cold_lead | reactivation | post_sale
+  triggerData Json?   @map("trigger_data") @db.JsonB
+
+  // Sequence state
+  status      String  @default("active") // active | paused | completed | stopped | expired
+  currentStep Int     @default(0) @map("current_step")
+  maxSteps    Int     @default(5) @map("max_steps")
+  stopReason  String? @map("stop_reason") // responded | advanced | closed | rejected | advisor_intervened | expired | manual
+
+  // Lead context snapshot (for personalization)
+  leadName      String? @map("lead_name")
+  companyName   String? @map("company_name")
+  zone          String?
+  industry      String?
+  estimatedValue Float? @map("estimated_value")
+  leadStatus    String? @map("lead_status")
+  campaignSource String? @map("campaign_source")
+  priorityScore Int     @default(50) @map("priority_score")
+
+  // Outcome tracking (full funnel)
+  meetingBooked   Boolean  @default(false) @map("meeting_booked")
+  meetingAt       DateTime? @map("meeting_at")
+  dealCreated     Boolean  @default(false) @map("deal_created")
+  dealCreatedAt   DateTime? @map("deal_created_at")
+  dealClosed      Boolean  @default(false) @map("deal_closed")
+  dealClosedAt    DateTime? @map("deal_closed_at")
+  revenueGenerated Float?  @map("revenue_generated")
+  dealStageReached String? @map("deal_stage_reached")
+
+  // Timing
+  nextActionAt  DateTime? @map("next_action_at")
+  startedAt     DateTime  @default(now()) @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+  pausedAt      DateTime? @map("paused_at")
+  lastActionAt  DateTime? @map("last_action_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  steps FollowUpStep[]
+
+  @@index([leadId])
+  @@index([advisorId])
+  @@index([status])
+  @@index([trigger])
+  @@index([nextActionAt])
+  @@index([zone])
+  @@index([industry])
+  @@index([campaignSource])
+  @@index([meetingBooked])
+  @@index([dealClosed])
+  @@map("followup_sequences")
+}
+
+model FollowUpStep {
+  id          String @id @default(uuid())
+
+  sequenceId  String @map("sequence_id")
+  sequence    FollowUpSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  // Step definition
+  stepNumber  Int    @map("step_number")
+  channel     String // whatsapp | sms | email | crm_task
+  tone        String @default("consultative") // formal | consultative | urgent | warm | direct
+  templateKey String? @map("template_key")
+
+  // Message content
+  subject     String? // for email
+  messageBody String  @map("message_body") @db.Text
+  variables   Json?   @db.JsonB // { name, company, savings, systemSize, etc. }
+
+  // Scheduling
+  scheduledAt DateTime? @map("scheduled_at")
+  delayDays   Int       @default(0) @map("delay_days") // days from sequence start or last step
+
+  // Execution
+  status      String  @default("pending") // pending | sent | delivered | opened | replied | failed | skipped | cancelled
+  sentAt      DateTime? @map("sent_at")
+  deliveredAt DateTime? @map("delivered_at")
+  openedAt    DateTime? @map("opened_at")
+  repliedAt   DateTime? @map("replied_at")
+  failedAt    DateTime? @map("failed_at")
+  failReason  String?   @map("fail_reason")
+
+  // CRM sync
+  zohoTaskId    String?  @map("zoho_task_id")
+  zohoActivityId String? @map("zoho_activity_id")
+  crmSynced     Boolean  @default(false) @map("crm_synced")
+
+  // Performance
+  wasOpened     Boolean @default(false) @map("was_opened")
+  wasReplied    Boolean @default(false) @map("was_replied")
+  ledToAdvance  Boolean @default(false) @map("led_to_advance") // did lead advance stage after this?
+
+  // A/B testing
+  abTestId      String?  @map("ab_test_id")
+  abVariant     String?  @map("ab_variant") // "A" | "B" | "C"
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([sequenceId, stepNumber])
+  @@index([sequenceId])
+  @@index([channel])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([abTestId])
+  @@map("followup_steps")
+}
+
+model MessageTemplate {
+  id          String @id @default(uuid())
+
+  // Identity
+  key         String @unique // e.g. "new_lead_whatsapp_solar_formal"
+  name        String
+  description String?
+
+  // Targeting
+  trigger     String  // new_lead | no_response | stalled_deal | cold_lead | reactivation | post_sale
+  channel     String  // whatsapp | sms | email | crm_task
+  tone        String  @default("consultative") // formal | consultative | urgent | warm | direct
+  industry    String? // solar | arrendamiento | industrial | general
+  zone        String?
+  ticketRange String? @map("ticket_range") // low | medium | high | enterprise
+  stage       String? // specific lead stage or null for any
+
+  // Content
+  subject     String?        // for email
+  body        String  @db.Text // template with {{variables}}
+  variables   String[] // list of variable names: ["name", "company", "savings"]
+
+  // Performance tracking
+  timesSent   Int   @default(0) @map("times_sent")
+  timesOpened Int   @default(0) @map("times_opened")
+  timesReplied Int  @default(0) @map("times_replied")
+  conversions Int   @default(0)
+  openRate    Float @default(0) @map("open_rate")
+  replyRate   Float @default(0) @map("reply_rate")
+  conversionRate Float @default(0) @map("conversion_rate")
+  performanceScore Float @default(50) @map("performance_score") // 0-100, adaptive
+
+  isActive    Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([trigger, channel])
+  @@index([industry])
+  @@index([performanceScore])
+  @@map("message_templates")
+}
+
+model ABTest {
+  id          String @id @default(uuid())
+
+  // Test identity
+  name        String
+  description String?
+  status      String @default("active") // active | paused | completed | winner_selected
+
+  // What's being tested
+  trigger     String  // new_lead | no_response | stalled_deal | etc.
+  channel     String  // whatsapp | sms | email
+  stepNumber  Int     @map("step_number") // which step in sequence
+
+  // Variants
+  variantABody  String @map("variant_a_body") @db.Text
+  variantASubject String? @map("variant_a_subject")
+  variantATone  String @default("consultative") @map("variant_a_tone")
+  variantBBody  String @map("variant_b_body") @db.Text
+  variantBSubject String? @map("variant_b_subject")
+  variantBTone  String @default("consultative") @map("variant_b_tone")
+
+  // Results variant A
+  aSent       Int @default(0) @map("a_sent")
+  aOpened     Int @default(0) @map("a_opened")
+  aReplied    Int @default(0) @map("a_replied")
+  aConverted  Int @default(0) @map("a_converted")
+
+  // Results variant B
+  bSent       Int @default(0) @map("b_sent")
+  bOpened     Int @default(0) @map("b_opened")
+  bReplied    Int @default(0) @map("b_replied")
+  bConverted  Int @default(0) @map("b_converted")
+
+  // Winner
+  winner          String?  // "A" | "B" | null
+  winnerConfidence Float?  @map("winner_confidence") // 0-1 statistical confidence
+  minSampleSize   Int      @default(30) @map("min_sample_size")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([trigger, channel])
+  @@map("ab_tests")
+}
+
+model AutomationAlert {
+  id       String @id @default(uuid())
+
+  type     String // low_response_rate | low_conversion | high_dropoff | stalled_sequences | channel_underperform
+  severity String // critical | high | medium | low
+
+  // Context
+  dimension   String?  // channel | trigger | advisor | zone | sequence
+  dimensionId String?  @map("dimension_id") // the specific value
+  title       String
+  message     String   @db.Text
+  recommendation String? @db.Text
+  metric      String?  // which metric triggered it
+  metricValue Float?   @map("metric_value")
+  threshold   Float?   // what the threshold was
+
+  status     String  @default("open") // open | acknowledged | resolved | dismissed
+  resolvedAt DateTime? @map("resolved_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([type])
+  @@index([status])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("automation_alerts")
+}
+
+// ── Sales Coach Usage Tracking ──────────────────────────────────
+
+model CoachUsage {
+  id        String @id @default(uuid())
+
+  advisorId String @map("advisor_id")
+  leadId    String? @map("lead_id")
+
+  stage     String // new_lead | follow_up | negotiation | reactivation | post_sale
+  channel   String // whatsapp | sms | email | call_script
+  action    String // generated | copied | used | regenerated
+  tone      String? // professional | warm | direct | consultative | high_urgency | soft_urgency
+  category  String? // objection | closing | next_action | message | reactivation
+
+  messageType  String? @map("message_type") // first_contact | follow_up | objection_response | closing | etc
+  suggestionId String? @map("suggestion_id") // reference to which template was used
+
+  metadata  Json?   @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([advisorId])
+  @@index([leadId])
+  @@index([stage])
+  @@index([channel])
+  @@index([createdAt])
+  @@map("coach_usage")
+}
+
+// ── Campaign Attribution ─────────────────────────────────────
+
+model Campaign {
+  id          String @id @default(uuid())
+
+  // Identity
+  name           String   @unique              // Normalized: "Meta Solar GDL"
+  zohoName       String?  @map("zoho_name")    // Original from Zoho: "PANELES SOLARES NEGOCIOS 3 SEGMENTADA"
+  campaignGroup  String   @map("campaign_group") // Group: "Solar", "Arrendamiento", "Centros de Utilidad", etc.
+  campaignType   String   @map("campaign_type")  // performance | branding | referral | organic | internal | database
+
+  // Channel
+  channel        String   // Meta | Google | TikTok | Referral | Outbound | Organic | WhatsApp | Wiki | Database
+  sourceType     String   @map("source_type")  // paid | organic | referral | outbound | database | internal
+
+  // Cost tracking
+  monthlyCost    Float?   @map("monthly_cost")     // Monthly ad spend in MXN
+  totalCost      Float?   @map("total_cost")       // Lifetime total cost
+  costCurrency   String   @default("MXN") @map("cost_currency")
+  startDate      DateTime? @map("start_date")
+  endDate        DateTime? @map("end_date")
+
+  // Status
+  isActive       Boolean  @default(true) @map("is_active")
+
+  // Metadata
+  description    String?  @db.Text
+  targetZone     String?  @map("target_zone")     // BAJIO, OCCIDENTE, CENTRO, etc.
+  targetProduct  String?  @map("target_product")   // solar, arrendamiento, industrial
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  attributions CampaignAttribution[]
+
+  @@index([channel])
+  @@index([campaignGroup])
+  @@index([campaignType])
+  @@index([sourceType])
+  @@map("campaigns")
+}
+
+model CampaignAttribution {
+  id          String @id @default(uuid())
+
+  // Link to lead
+  leadId      String  @map("lead_id")
+
+  // Campaign reference
+  campaignId  String? @map("campaign_id")
+  campaign    Campaign? @relation(fields: [campaignId], references: [id])
+
+  // Denormalized for fast queries
+  campaignName    String?  @map("campaign_name")
+  campaignGroup   String?  @map("campaign_group")
+  campaignType    String?  @map("campaign_type")    // performance | branding | referral | organic | internal | database
+  channel         String?                            // Meta | Google | TikTok | Referral | Outbound | Organic | WhatsApp | Wiki | Database
+  sourceType      String?  @map("source_type")       // paid | organic | referral | outbound | database | internal
+
+  // Original Zoho data (preserved for audit)
+  zohoLeadSource  String?  @map("zoho_lead_source")  // Raw Lead_Source from Zoho
+  zohoAdCampaign  String?  @map("zoho_ad_campaign")  // Raw Ad_Campaign from Zoho
+  zohoUtmSource   String?  @map("zoho_utm_source")
+  zohoUtmMedium   String?  @map("zoho_utm_medium")
+  zohoUtmCampaign String?  @map("zoho_utm_campaign")
+
+  // Inference metadata
+  attributionMethod String @default("manual") @map("attribution_method") // zoho_sync | inferred_source | inferred_campaign | utm | manual
+  confidence        Float  @default(1.0) // 0.0–1.0
+
+  // Deal/revenue linkage
+  dealStage       String?  @map("deal_stage")
+  dealAmount      Float?   @map("deal_amount")
+  dealPipeline    String?  @map("deal_pipeline")
+  isWon           Boolean  @default(false) @map("is_won")
+  revenueAttributed Float? @map("revenue_attributed")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([leadId])
+  @@index([campaignId])
+  @@index([channel])
+  @@index([campaignGroup])
+  @@index([sourceType])
+  @@index([isWon])
+  @@map("campaign_attributions")
+}
+
+// ── Post-Sale Client Lifecycle ──────────────────────────────
+
+model ClientProfile {
+  id       String @id @default(uuid())
+
+  // Link to lead (1:1 for CERRADO_GANADO leads)
+  leadId   String @unique @map("lead_id")
+
+  // Client info (denormalized for performance)
+  companyName  String @map("company_name")
+  contactName  String @map("contact_name")
+  contactEmail String? @map("contact_email")
+  contactPhone String? @map("contact_phone")
+  advisorId    String? @map("advisor_id")
+  zone         String?
+  city         String?
+  industry     String?
+
+  // Project & system
+  systemStatus       ClientSystemStatus @default(PENDING) @map("system_status")
+  projectCompletedAt DateTime?          @map("project_completed_at")
+  installationDate   DateTime?          @map("installation_date")
+  systemSize         String?            @map("system_size") // e.g. "15kW"
+  projectNotes       String?            @map("project_notes") @db.Text
+
+  // Lifecycle
+  lifecycleStage  ClientLifecycleStage @default(NEW_CLIENT) @map("lifecycle_stage")
+  lastContactedAt DateTime?            @map("last_contacted_at")
+  nextFollowUpAt  DateTime?            @map("next_follow_up_at")
+
+  // Satisfaction
+  satisfactionScore Int?    @map("satisfaction_score") // 1-10
+  satisfactionNotes String? @map("satisfaction_notes") @db.Text
+  lastSurveyAt      DateTime? @map("last_survey_at")
+  npsScore          Int?      @map("nps_score") // -100 to 100
+
+  // Revenue
+  totalRevenue     Float   @default(0) @map("total_revenue")
+  projectCount     Int     @default(1) @map("project_count")
+  avgProjectValue  Float   @default(0) @map("avg_project_value")
+  lifetimeValue    Float   @default(0) @map("lifetime_value") // LTV
+
+  // Expansion potential
+  expansionScore   Int     @default(50) @map("expansion_score") // 0-100
+  expansionType    String? @map("expansion_type") // expansion | upgrade | cross_sell
+  expansionNotes   String? @map("expansion_notes") @db.Text
+  hasMultipleLocations Boolean @default(false) @map("has_multiple_locations")
+
+  // Referral tracking
+  referralCount    Int     @default(0) @map("referral_count")
+  referralRevenue  Float   @default(0) @map("referral_revenue")
+  isReferralSource Boolean @default(false) @map("is_referral_source")
+
+  // Churn risk
+  churnRisk        Int     @default(0) @map("churn_risk") // 0-100
+  churnReason      String? @map("churn_reason")
+
+  // Timestamps
+  becameClientAt DateTime  @default(now()) @map("became_client_at")
+  reactivatedAt  DateTime? @map("reactivated_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  referrals      Referral[]
+  postSaleSteps  PostSaleStep[]
+
+  @@index([lifecycleStage])
+  @@index([systemStatus])
+  @@index([advisorId])
+  @@index([zone])
+  @@index([expansionScore])
+  @@index([churnRisk])
+  @@index([totalRevenue])
+  @@index([lastContactedAt])
+  @@map("client_profiles")
+}
+
+model PostSaleStep {
+  id       String @id @default(uuid())
+
+  clientId String @map("client_id")
+  client   ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Step definition
+  stepType    String  @map("step_type") // onboarding | satisfaction_check | performance_review | upsell_check | expansion_offer | referral_request | reactivation
+  channel     String  // whatsapp | sms | email | call | crm_task
+  dayOffset   Int     @map("day_offset") // days after project completion
+  subject     String?
+  messageBody String  @map("message_body") @db.Text
+
+  // Scheduling & execution
+  scheduledAt DateTime? @map("scheduled_at")
+  status      String    @default("pending") // pending | sent | delivered | opened | replied | skipped | cancelled
+  sentAt      DateTime? @map("sent_at")
+  openedAt    DateTime? @map("opened_at")
+  repliedAt   DateTime? @map("replied_at")
+
+  // Outcome
+  outcome     String?  // positive | neutral | negative | no_response
+  notes       String?  @db.Text
+  ledToAction Boolean  @default(false) @map("led_to_action") // upsell, referral, etc.
+  actionType  String?  @map("action_type") // upsell | referral | reactivation | none
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([clientId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([stepType])
+  @@map("post_sale_steps")
+}
+
+model Referral {
+  id       String @id @default(uuid())
+
+  // Source client
+  referrerId  String @map("referrer_id")
+  referrer    ClientProfile @relation(fields: [referrerId], references: [id])
+
+  // Referred lead
+  referredLeadId String?  @map("referred_lead_id") // created lead if converted
+  referredName   String   @map("referred_name")
+  referredCompany String? @map("referred_company")
+  referredPhone  String?  @map("referred_phone")
+  referredEmail  String?  @map("referred_email")
+  referredIndustry String? @map("referred_industry")
+
+  // Status
+  status    ReferralStatus @default(REQUESTED)
+  assignedToId String?     @map("assigned_to_id")
+
+  // Tracking
+  requestedAt  DateTime  @default(now()) @map("requested_at")
+  receivedAt   DateTime? @map("received_at")
+  convertedAt  DateTime? @map("converted_at")
+  revenue      Float?    // revenue from referred deal
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([referrerId])
+  @@index([status])
+  @@index([referredLeadId])
+  @@map("referrals")
+}
+
+model ClientAlert {
+  id       String @id @default(uuid())
+
+  clientId  String  @map("client_id")
+  advisorId String? @map("advisor_id")
+
+  // Alert definition
+  type     String // no_followup | inactive_client | upsell_opportunity | referral_opportunity | churn_risk | expansion_detected | satisfaction_low
+  severity String // critical | high | medium | low
+  title    String
+  message  String @db.Text
+  recommendation String? @db.Text
+
+  // Scoring
+  priorityScore  Int    @default(50) @map("priority_score") // 0-100
+  estimatedValue Float? @map("estimated_value")
+
+  // State
+  status     String   @default("open") // open | acknowledged | resolved | dismissed
+  resolvedAt DateTime? @map("resolved_at")
+  actionTaken String?  @map("action_taken")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([clientId])
+  @@index([type])
+  @@index([status])
+  @@index([severity])
+  @@index([priorityScore])
+  @@map("client_alerts")
+}
+
+// ── Live Chat: Contact Timeline ───────────────────────────────
+
+model ContactTimeline {
+  id            String   @id @default(uuid())
+  leadId        String   @map("lead_id")
+  zohoRecordId  String?  @map("zoho_record_id")
+  zohoModule    String?  @map("zoho_module") // Leads | Deals | Contacts
+  eventType     String   @map("event_type") // note | sms | whatsapp | email | call | stage_change | reminder | conversion | system
+  eventSource   String   @map("event_source") // manual | automation | zoho_sync | sms_masivos | system
+  channel       String?  // whatsapp | sms | email | phone | in_person
+  content       String?  @db.Text
+  metadata      Json?    // extra context (old_stage, new_stage, sms_status, etc.)
+  advisorId     String?  @map("advisor_id")
+  advisorName   String?  @map("advisor_name")
+  status        String   @default("completed") // completed | pending | failed
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([leadId])
+  @@index([advisorId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@index([zohoRecordId])
+  @@map("contact_timeline")
+}
+
+// ── Live Chat: Reminders ──────────────────────────────────────
+
+model Reminder {
+  id            String   @id @default(uuid())
+  leadId        String   @map("lead_id")
+  advisorId     String   @map("advisor_id")
+  advisorName   String?  @map("advisor_name")
+  title         String
+  description   String?  @db.Text
+  dueDate       DateTime @map("due_date")
+  priority      String   @default("medium") // critical | high | medium | low
+  status        String   @default("pending") // pending | completed | overdue | cancelled
+  completedAt   DateTime? @map("completed_at")
+  zohoTaskId    String?  @map("zoho_task_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([leadId])
+  @@index([advisorId])
+  @@index([dueDate])
+  @@index([status])
+  @@map("reminders")
+}
+
+// ── Live Chat: SMS Log ────────────────────────────────────────
+
+model SmsLog {
+  id            String   @id @default(uuid())
+  leadId        String?  @map("lead_id")
+  advisorId     String   @map("advisor_id")
+  advisorName   String?  @map("advisor_name")
+  phone         String
+  message       String   @db.Text
+  direction     String   @default("outbound") // outbound | inbound
+  status        String   @default("sent") // queued | sent | delivered | failed | retry
+  provider      String   @default("sms_masivos")
+  providerMsgId String?  @map("provider_msg_id")
+  errorMessage  String?  @map("error_message")
+  retryCount    Int      @default(0) @map("retry_count")
+  sentAt        DateTime @default(now()) @map("sent_at")
+  deliveredAt   DateTime? @map("delivered_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  lead Lead? @relation(fields: [leadId], references: [id])
+
+  @@index([leadId])
+  @@index([advisorId])
+  @@index([status])
+  @@index([sentAt])
+  @@map("sms_logs")
+}
+
+// ── Live Chat: Zoho Sync State ────────────────────────────────
+
+model ZohoSyncState {
+  id          String   @id @default(uuid())
+  module      String   @unique // Leads | Deals | Contacts | Notes | Tasks
+  lastSyncAt  DateTime? @map("last_sync_at")
+  lastPage    Int      @default(1) @map("last_page")
+  totalSynced Int      @default(0) @map("total_synced")
+  status      String   @default("idle") // idle | syncing | error | completed
+  errorMsg    String?  @map("error_msg")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("zoho_sync_state")
+}
